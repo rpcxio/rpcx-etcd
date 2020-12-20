@@ -1,0 +1,20 @@
+language: go
+
+go:
+  - 1.15.x
+
+# let us have speedy Docker-based Travis workers
+sudo: false
+
+before_install:
+  # Symlink below is needed for Travis CI to work correctly on personal forks of libkv
+  - ln -s $HOME/gopath/src/github.com/${TRAVIS_REPO_SLUG///rpcx-etcd/} $HOME/gopath/src/github.com/rpcxio
+
+before_script:
+  - script/travis_etcd.sh 3.4.13
+
+script:
+  - ./etcd/etcd --enable-v2=true --listen-client-urls 'http://0.0.0.0:4001' --advertise-client-urls 'http://127.0.0.1:4001' >/dev/null 2>&1 &
+  - script/validate-gofmt
+  - go vet ./...
+  - go test -v -race ./...
