@@ -56,7 +56,7 @@ func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) client.ServiceDisc
 	d.stopCh = make(chan struct{})
 
 	ps, err := kv.List(basePath)
-	if err != nil {
+	if err != nil && err != store.ErrKeyNotFound {
 		log.Errorf("cannot get services of from registry: %v, err: %v", basePath, err)
 		panic(err)
 	}
