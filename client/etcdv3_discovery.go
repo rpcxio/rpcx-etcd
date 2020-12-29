@@ -36,18 +36,18 @@ type EtcdV3Discovery struct {
 }
 
 // NewEtcdV3Discovery returns a new EtcdV3Discovery.
-func NewEtcdV3Discovery(basePath string, servicePath string, etcdAddr []string, options *store.Config) client.ServiceDiscovery {
+func NewEtcdV3Discovery(basePath string, servicePath string, etcdAddr []string, options *store.Config) (client.ServiceDiscovery, error) {
 	kv, err := libkv.NewStore(estore.ETCDV3, etcdAddr, options)
 	if err != nil {
 		log.Infof("cannot create store: %v", err)
-		panic(err)
+		return nil, err
 	}
 
 	return NewEtcdV3DiscoveryStore(basePath+"/"+servicePath, kv)
 }
 
 // NewEtcdV3DiscoveryStore return a new EtcdV3Discovery with specified store.
-func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) client.ServiceDiscovery {
+func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) (client.ServiceDiscovery, error) {
 	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
 		basePath = basePath[:len(basePath)-1]
 	}
@@ -58,7 +58,7 @@ func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) client.ServiceDisc
 	ps, err := kv.List(basePath)
 	if err != nil && err != store.ErrKeyNotFound {
 		log.Errorf("cannot get services of from registry: %v, err: %v", basePath, err)
-		panic(err)
+		return nil, err
 	}
 	pairs := make([]*client.KVPair, 0, len(ps))
 	var prefix string
@@ -94,11 +94,11 @@ func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) client.ServiceDisc
 	d.RetriesAfterWatchFailed = -1
 
 	go d.watch()
-	return d
+	return d, nil
 }
 
 // NewEtcdV3DiscoveryTemplate returns a new EtcdV3Discovery template.
-func NewEtcdV3DiscoveryTemplate(basePath string, etcdAddr []string, options *store.Config) client.ServiceDiscovery {
+func NewEtcdV3DiscoveryTemplate(basePath string, etcdAddr []string, options *store.Config) (client.ServiceDiscovery, error) {
 	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
 		basePath = basePath[:len(basePath)-1]
 	}
@@ -106,14 +106,14 @@ func NewEtcdV3DiscoveryTemplate(basePath string, etcdAddr []string, options *sto
 	kv, err := libkv.NewStore(estore.ETCDV3, etcdAddr, options)
 	if err != nil {
 		log.Infof("cannot create store: %v", err)
-		panic(err)
+		return nil, err
 	}
 
-	return &EtcdV3Discovery{basePath: basePath, kv: kv}
+	return &EtcdV3Discovery{basePath: basePath, kv: kv}, nil
 }
 
 // Clone clones this ServiceDiscovery with new servicePath.
-func (d *EtcdV3Discovery) Clone(servicePath string) client.ServiceDiscovery {
+func (d *EtcdV3Discovery) Clone(servicePath string) (client.ServiceDiscovery, error) {
 	return NewEtcdV3DiscoveryStore(d.basePath+"/"+servicePath, d.kv)
 }
 
