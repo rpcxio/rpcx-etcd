@@ -555,6 +555,8 @@ github.com/smallnest/rpcx v0.0.0-20201229092922-2b4fc5951d80 h1:vd0g9y421wkYwWgc
 github.com/smallnest/rpcx v0.0.0-20201229092922-2b4fc5951d80/go.mod h1:U4+AmbJ3rJZ4/SuyAFRXox8ejcryoikKgXMzvbxM3sI=
 github.com/smallnest/rpcx v0.0.0-20201229094125-f426b53fa0cb h1:J98zwzhrV+z0RW74mkW1j7g8h6McLSAjxnWg9PNjX04=
 github.com/smallnest/rpcx v0.0.0-20201229094125-f426b53fa0cb/go.mod h1:U4+AmbJ3rJZ4/SuyAFRXox8ejcryoikKgXMzvbxM3sI=
+github.com/smallnest/rpcx v0.0.0-20201229095343-8d0ca6b6ef90 h1:rH8db5GSv7QiMHZCCXNK47FKOzLq0U8y40boP5LMoWs=
+github.com/smallnest/rpcx v0.0.0-20201229095343-8d0ca6b6ef90/go.mod h1:U4+AmbJ3rJZ4/SuyAFRXox8ejcryoikKgXMzvbxM3sI=
 github.com/smallnest/rpcx v5.7.5+incompatible h1:3mLbtf5CNEWIaN+2aKtc3QBEMtgotE7Pq9DSJK5cIdQ=
 github.com/smallnest/rpcx v5.7.5+incompatible/go.mod h1:UGkYp31J8PkMl7L2S3S1WaO68o7Nr8eMDgBNRbHNgQs=
 github.com/smallnest/valkeyrie v0.0.0-20200811110245-15a06a9896aa/go.mod h1:C5s5pS7Xtix2kB4aX02jAPSQo6ZMgPieDEO20CNj25Q=
