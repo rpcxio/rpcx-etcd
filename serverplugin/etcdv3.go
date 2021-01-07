@@ -215,6 +215,10 @@ func (p *EtcdV3RegisterPlugin) RegisterFunction(serviceName, fname string, fn in
 }
 
 func (p *EtcdV3RegisterPlugin) Unregister(name string) (err error) {
+	if len(p.Services) == 0 {
+		return nil
+	}
+
 	if strings.TrimSpace(name) == "" {
 		err = errors.New("Register service `name` can't be empty")
 		return
@@ -251,13 +255,15 @@ func (p *EtcdV3RegisterPlugin) Unregister(name string) (err error) {
 		return err
 	}
 
-	var services = make([]string, 0, len(p.Services)-1)
-	for _, s := range p.Services {
-		if s != name {
-			services = append(services, s)
+	if len(p.Services) > 0 {
+		var services = make([]string, 0, len(p.Services)-1)
+		for _, s := range p.Services {
+			if s != name {
+				services = append(services, s)
+			}
 		}
+		p.Services = services
 	}
-	p.Services = services
 
 	p.metasLock.Lock()
 	if p.metas == nil {
