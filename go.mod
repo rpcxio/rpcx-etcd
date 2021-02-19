@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.1.5 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20200313005456-10cdbea86bc0
 	github.com/rpcxio/libkv v0.5.0
-	github.com/smallnest/rpcx v0.0.0-20210120041900-c2830baacdb1
+	github.com/smallnest/rpcx v0.0.0-20210219130000-031af6a9dc4c
 	github.com/stretchr/testify v1.6.1
 	go.etcd.io/bbolt v1.3.5 // indirect
 	go.etcd.io/etcd v3.3.25+incompatible

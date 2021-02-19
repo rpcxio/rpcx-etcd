@@ -106,7 +106,7 @@ func NewEtcdDiscoveryTemplate(basePath string, etcdAddr []string, options *store
 		return nil, err
 	}
 
-	return &EtcdDiscovery{basePath: basePath, kv: kv}, nil
+	return NewEtcdDiscoveryStore(basePath, kv)
 }
 
 // Clone clones this ServiceDiscovery with new servicePath.
