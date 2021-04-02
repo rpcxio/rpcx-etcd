@@ -157,6 +157,7 @@ func (d *EtcdDiscovery) watch() {
 		d.kv.Close()
 	}()
 
+rewatch:
 	for {
 		var err error
 		var c <-chan []*store.KVPair
@@ -189,7 +190,6 @@ func (d *EtcdDiscovery) watch() {
 			return
 		}
 
-	readChanges:
 		for {
 			select {
 			case <-d.stopCh:
@@ -197,7 +197,7 @@ func (d *EtcdDiscovery) watch() {
 				return
 			case ps, ok := <-c:
 				if !ok {
-					break readChanges
+					break rewatch
 				}
 				var pairs []*client.KVPair // latest servers
 				if ps == nil {

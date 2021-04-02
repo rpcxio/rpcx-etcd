@@ -199,12 +199,17 @@ rewatch:
 			case <-d.stopCh:
 				log.Info("discovery has been closed")
 				return
-			case ps := <-c:
-				if ps == nil {
-					log.Warnf("rewatch %s", d.basePath)
-					goto rewatch
+			case ps, ok := <-c:
+				if !ok {
+					break rewatch
 				}
 				var pairs []*client.KVPair // latest servers
+				if ps == nil {
+					d.pairsMu.Lock()
+					d.pairs = pairs
+					d.pairsMu.Unlock()
+					continue
+				}
 				var prefix string
 				for _, p := range ps {
 					if prefix == "" {
