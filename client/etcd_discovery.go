@@ -195,11 +195,17 @@ func (d *EtcdDiscovery) watch() {
 			case <-d.stopCh:
 				log.Info("discovery has been closed")
 				return
-			case ps := <-c:
-				if ps == nil {
+			case ps, ok := <-c:
+				if !ok {
 					break readChanges
 				}
 				var pairs []*client.KVPair // latest servers
+				if ps == nil {
+					d.pairsMu.Lock()
+					d.pairs = pairs
+					d.pairsMu.Unlock()
+					continue
+				}
 				var prefix string
 				for _, p := range ps {
 					if prefix == "" {
