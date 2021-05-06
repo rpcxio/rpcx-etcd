@@ -67,7 +67,11 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 	}
 
 	go func() {
-		<-s.startKeepAlive
+		select {
+		case <-s.startKeepAlive:
+		case <-s.done:
+			return
+		}
 
 		var ch <-chan *clientv3.LeaseKeepAliveResponse
 		var kaerr error
