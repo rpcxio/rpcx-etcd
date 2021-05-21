@@ -252,8 +252,6 @@ rewatch:
 				d.mu.Unlock()
 			}
 		}
-
-		log.Warn("chan is closed and will rewatch")
 	}
 }
 
