@@ -10,8 +10,3 @@ require (
 	go.etcd.io/etcd/client/v2 v2.305.0-alpha.0
 	go.etcd.io/etcd/client/v3 v3.5.0-alpha.0
 )
-
-replace (
-	github.com/coreos/bbolt => go.etcd.io/bbolt v1.3.3
-	github.com/coreos/etcd => go.etcd.io/etcd/v3 v3.5.0-alpha.0
-)
