@@ -78,7 +78,7 @@ func NewEtcdV3DiscoveryStore(basePath string, kv store.Store) (client.ServiceDis
 				}
 			}
 		}
-		if p.Key == prefix[:len(prefix)-1] {
+		if p.Key == prefix[:len(prefix)-1] || !strings.HasPrefix(p.Key, prefix) {
 			continue
 		}
 		k := strings.TrimPrefix(p.Key, prefix)
