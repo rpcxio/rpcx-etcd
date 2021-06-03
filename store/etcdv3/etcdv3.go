@@ -291,7 +291,7 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 		defer close(watchCh)
 
 		list, err := s.List(directory)
-		if err != nil {
+		if err != nil && err != store.ErrKeyNotFound {
 			return
 		}
 
@@ -304,7 +304,7 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 				return
 			case <-rch:
 				list, err := s.List(directory)
-				if err != nil {
+				if err != nil && err != store.ErrKeyNotFound {
 					return
 				}
 				watchCh <- list
