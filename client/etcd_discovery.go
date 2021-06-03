@@ -30,24 +30,25 @@ type EtcdDiscovery struct {
 	// -1 means it always retry to watch until zookeeper is ok, 0 means no retry.
 	RetriesAfterWatchFailed int
 
-	filter client.ServiceDiscoveryFilter
+	filter           client.ServiceDiscoveryFilter
+	AllowKeyNotFound bool
 
 	stopCh chan struct{}
 }
 
 // NewEtcdDiscovery returns a new EtcdDiscovery.
-func NewEtcdDiscovery(basePath string, servicePath string, etcdAddr []string, options *store.Config) (client.ServiceDiscovery, error) {
+func NewEtcdDiscovery(basePath string, servicePath string, etcdAddr []string, allowKeyNotFound bool, options *store.Config) (client.ServiceDiscovery, error) {
 	kv, err := libkv.NewStore(estore.ETCD, etcdAddr, options)
 	if err != nil {
 		log.Infof("cannot create store: %v", err)
 		panic(err)
 	}
 
-	return NewEtcdDiscoveryStore(basePath+"/"+servicePath, kv)
+	return NewEtcdDiscoveryStore(basePath+"/"+servicePath, kv, allowKeyNotFound)
 }
 
 // NewEtcdDiscoveryStore return a new EtcdDiscovery with specified store.
-func NewEtcdDiscoveryStore(basePath string, kv store.Store) (client.ServiceDiscovery, error) {
+func NewEtcdDiscoveryStore(basePath string, kv store.Store, allowKeyNotFound bool) (client.ServiceDiscovery, error) {
 	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
 		basePath = basePath[:len(basePath)-1]
 	}
@@ -57,8 +58,10 @@ func NewEtcdDiscoveryStore(basePath string, kv store.Store) (client.ServiceDisco
 
 	ps, err := kv.List(basePath)
 	if err != nil {
-		log.Infof("cannot get services of from registry: %v, err: %v", basePath, err)
-		return nil, err
+		if !allowKeyNotFound || err != store.ErrKeyNotFound {
+			log.Infof("cannot get services of from registry: %v, err: %v", basePath, err)
+			return nil, err
+		}
 	}
 	pairs := make([]*client.KVPair, 0, len(ps))
 	var prefix string
@@ -95,7 +98,7 @@ func NewEtcdDiscoveryStore(basePath string, kv store.Store) (client.ServiceDisco
 }
 
 // NewEtcdDiscoveryTemplate returns a new EtcdDiscovery template.
-func NewEtcdDiscoveryTemplate(basePath string, etcdAddr []string, options *store.Config) (client.ServiceDiscovery, error) {
+func NewEtcdDiscoveryTemplate(basePath string, etcdAddr []string, allowKeyNotFound bool, options *store.Config) (client.ServiceDiscovery, error) {
 	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
 		basePath = basePath[:len(basePath)-1]
 	}
@@ -106,12 +109,12 @@ func NewEtcdDiscoveryTemplate(basePath string, etcdAddr []string, options *store
 		return nil, err
 	}
 
-	return NewEtcdDiscoveryStore(basePath, kv)
+	return NewEtcdDiscoveryStore(basePath, kv, allowKeyNotFound)
 }
 
 // Clone clones this ServiceDiscovery with new servicePath.
 func (d *EtcdDiscovery) Clone(servicePath string) (client.ServiceDiscovery, error) {
-	return NewEtcdDiscoveryStore(d.basePath+"/"+servicePath, d.kv)
+	return NewEtcdDiscoveryStore(d.basePath+"/"+servicePath, d.kv, d.AllowKeyNotFound)
 }
 
 // SetFilter sets the filer.
