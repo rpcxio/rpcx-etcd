@@ -44,6 +44,10 @@ func NewEtcdV3Discovery(basePath string, servicePath string, etcdAddr []string, 
 		return nil, err
 	}
 
+	if ev3, ok := kv.(*etcd.EtcdV3); ok {
+		ev3.AllowKeyNotFound = allowKeyNotFound
+	}
+
 	return NewEtcdV3DiscoveryStore(basePath+"/"+servicePath, kv, allowKeyNotFound)
 }
 
@@ -111,6 +115,10 @@ func NewEtcdV3DiscoveryTemplate(basePath string, etcdAddr []string, allowKeyNotF
 	if err != nil {
 		log.Infof("cannot create store: %v", err)
 		return nil, err
+	}
+
+	if ev3, ok := kv.(*etcd.EtcdV3); ok {
+		ev3.AllowKeyNotFound = allowKeyNotFound
 	}
 
 	return NewEtcdV3DiscoveryStore(basePath, kv, allowKeyNotFound)

@@ -25,6 +25,8 @@ type EtcdV3 struct {
 	done           chan struct{}
 	startKeepAlive chan struct{}
 
+	AllowKeyNotFound bool
+
 	mu  sync.RWMutex
 	ttl int64
 }
@@ -114,7 +116,6 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 							}
 							goto rekeepalive
 						}
-
 					}
 
 				}
@@ -292,7 +293,9 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 
 		list, err := s.List(directory)
 		if err != nil {
-			return
+			if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
+				return
+			}
 		}
 
 		watchCh <- list
@@ -305,7 +308,9 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 			case <-rch:
 				list, err := s.List(directory)
 				if err != nil {
-					return
+					if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
+						return
+					}
 				}
 				watchCh <- list
 			}
@@ -385,10 +390,9 @@ func (s *EtcdV3) AtomicPut(key string, value []byte, previous *store.KVPair, opt
 		} else {
 			return false, nil, store.ErrKeyExists
 		}
-
 	} else {
 
-		var cmps = []clientv3.Cmp{
+		cmps := []clientv3.Cmp{
 			clientv3.Compare(clientv3.Value(key), "=", string(previous.Value)),
 			clientv3.Compare(clientv3.Version(key), "=", int64(previous.LastIndex)),
 		}
@@ -419,7 +423,7 @@ func (s *EtcdV3) AtomicPut(key string, value []byte, previous *store.KVPair, opt
 
 // AtomicDelete cas deletes a single value
 func (s *EtcdV3) AtomicDelete(key string, previous *store.KVPair) (bool, error) {
-	var deleted = false
+	deleted := false
 	var err error
 	var txresp *clientv3.TxnResponse
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
@@ -428,7 +432,7 @@ func (s *EtcdV3) AtomicDelete(key string, previous *store.KVPair) (bool, error) 
 	if previous == nil {
 		return false, errors.New("key's version info is needed!")
 	} else {
-		var cmps = []clientv3.Cmp{
+		cmps := []clientv3.Cmp{
 			clientv3.Compare(clientv3.Value(key), "=", string(previous.Value)),
 			clientv3.Compare(clientv3.Version(key), "=", int64(previous.LastIndex)),
 		}
