@@ -455,6 +455,11 @@ func (s *EtcdV3) AtomicDelete(key string, previous *store.KVPair) (bool, error) 
 
 // Close closes the client connection
 func (s *EtcdV3) Close() {
+	defer func() {
+		if recover() != nil {
+			// close of closed channel panic occur
+		}
+	}()
 	close(s.done)
 	s.client.Close()
 }
