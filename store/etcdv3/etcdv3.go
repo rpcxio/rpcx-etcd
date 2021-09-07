@@ -16,6 +16,10 @@ import (
 
 const defaultTTL = 30
 
+// EtcdConfigAutoSyncInterval give a choice to those etcd cluster could not auto sync
+// such I deploy clusters in docker they will dial tcp: lookup etcd1: Try again, can just set this to zero
+var EtcdConfigAutoSyncInterval = time.Minute * 5
+
 // EtcdV3 is the receiver type for the Store interface
 type EtcdV3 struct {
 	timeout        time.Duration
@@ -57,7 +61,7 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 		cfg.Username = options.Username
 		cfg.Password = options.Password
 
-		cfg.AutoSyncInterval = 5 * time.Minute
+		cfg.AutoSyncInterval = EtcdConfigAutoSyncInterval
 	}
 	if s.timeout == 0 {
 		s.timeout = 10 * time.Second
