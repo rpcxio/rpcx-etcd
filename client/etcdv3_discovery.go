@@ -216,7 +216,7 @@ rewatch:
 					break rewatch
 				}
 				var pairs []*client.KVPair // latest servers
-				if ps == nil {
+				if ps == nil && !d.AllowKeyNotFound {
 					d.pairsMu.Lock()
 					d.pairs = pairs
 					d.pairsMu.Unlock()
