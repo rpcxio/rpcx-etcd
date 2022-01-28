@@ -126,7 +126,13 @@ func NewEtcdV3DiscoveryTemplate(basePath string, etcdAddr []string, allowKeyNotF
 
 // Clone clones this ServiceDiscovery with new servicePath.
 func (d *EtcdV3Discovery) Clone(servicePath string) (client.ServiceDiscovery, error) {
-	return NewEtcdV3DiscoveryStore(d.basePath+"/"+servicePath, d.kv, d.AllowKeyNotFound)
+	// assume servicePath does not contains /
+	basePath := d.basePath
+	i := strings.LastIndex(basePath, "/")
+	if i > 0 {
+		basePath = basePath[:i]
+	}
+	return NewEtcdV3DiscoveryStore(basePath+"/"+servicePath, d.kv, d.AllowKeyNotFound)
 }
 
 // SetFilter sets the filer.
