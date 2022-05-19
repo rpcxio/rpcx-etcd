@@ -36,6 +36,7 @@ type EtcdRegisterPlugin struct {
 	metasLock      sync.RWMutex
 	metas          map[string]string
 	UpdateInterval time.Duration
+	Expired        time.Duration
 
 	Options *store.Config
 	kv      store.Store
@@ -46,6 +47,10 @@ type EtcdRegisterPlugin struct {
 
 // Start starts to connect etcd cluster
 func (p *EtcdRegisterPlugin) Start() error {
+	if p.Expired == 0 {
+		p.Expired = p.UpdateInterval
+	}
+
 	if p.done == nil {
 		p.done = make(chan struct{})
 	}
@@ -62,7 +67,7 @@ func (p *EtcdRegisterPlugin) Start() error {
 		p.kv = kv
 	}
 
-	err := p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true,TTL: p.UpdateInterval * 3})
+	err := p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true, TTL: p.UpdateInterval + p.Expired})
 	if err != nil && !strings.Contains(err.Error(), "Not a file") {
 		log.Errorf("cannot create etcd path %s: %v", p.BasePath, err)
 		return err
@@ -96,7 +101,7 @@ func (p *EtcdRegisterPlugin) Start() error {
 							meta := p.metas[name]
 							p.metasLock.RUnlock()
 
-							err = p.kv.Put(nodePath, []byte(meta), &store.WriteOptions{TTL: p.UpdateInterval * 3})
+							err = p.kv.Put(nodePath, []byte(meta), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 							if err != nil {
 								log.Errorf("cannot re-create etcd path %s: %v", nodePath, err)
 							}
@@ -106,7 +111,7 @@ func (p *EtcdRegisterPlugin) Start() error {
 							for key, value := range extra {
 								v.Set(key, value)
 							}
-							p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval * 3})
+							p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 						}
 					}
 				}
@@ -194,7 +199,7 @@ func (p *EtcdRegisterPlugin) Register(name string, rcvr interface{}, metadata st
 	}
 
 	nodePath = fmt.Sprintf("%s/%s/%s", p.BasePath, name, p.ServiceAddress)
-	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval * 2})
+	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 	if err != nil {
 		log.Errorf("cannot create etcd path %s: %v", nodePath, err)
 		return err
