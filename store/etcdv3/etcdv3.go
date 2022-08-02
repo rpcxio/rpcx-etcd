@@ -188,7 +188,7 @@ func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) erro
 		if err != nil {
 			return err
 		}
-		err := s.grant(ttl)
+		err = s.grant(ttl)
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) erro
 
 	// try
 	if err != nil && strings.Contains(err.Error(), "requested lease not found") {
-		err := s.grant(ttl)
+		err = s.grant(ttl)
 		if err != nil {
 			return err
 		}
