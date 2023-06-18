@@ -14,11 +14,19 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
+func init() {
+	libkv.AddStore(estore.ETCDV3, New)
+}
+
 const defaultTTL = 30
 
 // EtcdConfigAutoSyncInterval give a choice to those etcd cluster could not auto sync
 // such I deploy clusters in docker they will dial tcp: lookup etcd1: Try again, can just set this to zero
 var EtcdConfigAutoSyncInterval = time.Minute * 5
+
+func init() {
+	libkv.AddStore(estore.ETCDV3, New)
+}
 
 // EtcdV3 is the receiver type for the Store interface
 type EtcdV3 struct {
@@ -33,11 +41,6 @@ type EtcdV3 struct {
 
 	mu  sync.RWMutex
 	ttl int64
-}
-
-// Register registers etcd to libkv
-func Register() {
-	libkv.AddStore(estore.ETCDV3, New)
 }
 
 // New creates a new Etcd client given a list
@@ -67,77 +70,83 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 		s.timeout = 10 * time.Second
 	}
 	s.cfg = cfg
-	err := s.init()
+	err := s.init(true)
 	if err != nil {
 		return nil, err
 	}
 
-	go func() {
-		select {
-		case <-s.startKeepAlive:
-		case <-s.done:
-			return
-		}
-
-		var ch <-chan *clientv3.LeaseKeepAliveResponse
-		var kaerr error
-	rekeepalive:
-		cli := s.client
-		for {
-			if s.leaseID != 0 {
-				ch, kaerr = cli.KeepAlive(context.Background(), s.leaseID)
-			}
-			if kaerr == nil {
-				break
-			}
-			time.Sleep(time.Second)
-		}
-
-		for {
-			select {
-			case <-s.done:
-				return
-			case resp := <-ch:
-				if resp == nil { // connection is closed
-					cli.Close()
-					for {
-						select {
-						case <-s.done:
-							return
-						default:
-							err = s.init()
-							if err != nil {
-								time.Sleep(time.Second)
-								continue
-							}
-							s.mu.RLock()
-							err = s.grant(s.ttl)
-							s.mu.RUnlock()
-							if err != nil {
-								s.client.Close()
-								time.Sleep(time.Second)
-								continue
-							}
-							goto rekeepalive
-						}
-					}
-
-				}
-			}
-		}
-	}()
+	go s.keepAlive()
 
 	return s, nil
 }
 
-func (s *EtcdV3) init() error {
+func (s *EtcdV3) keepAlive() {
+	var ch <-chan *clientv3.LeaseKeepAliveResponse
+	var err error
+rekeepalive:
+	for {
+		if s.leaseID != 0 {
+			ch, err = s.client.KeepAlive(context.Background(), s.leaseID)
+		}
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	// KeepAlive success
+	for {
+		select {
+		case <-s.done:
+			return
+		case resp := <-ch: // KeepAlive channel is closed
+			if resp == nil { // connection is closed
+				s.client.Close()
+				for {
+					select {
+					case <-s.done:
+						return
+					default:
+						err = s.init(false)
+						if err != nil {
+							time.Sleep(time.Second)
+							continue
+						}
+
+						s.mu.RLock()
+						err = s.grant(s.ttl)
+						s.mu.RUnlock()
+						if err != nil {
+							s.client.Close()
+							time.Sleep(time.Second)
+							continue
+						}
+						goto rekeepalive
+					}
+				}
+
+			}
+		}
+	}
+
+}
+
+func (s *EtcdV3) init(grant bool) error {
 	cli, err := clientv3.New(s.cfg)
 	if err != nil {
 		return err
 	}
 
 	s.client = cli
-	return nil
+
+	if grant {
+
+		s.mu.RLock()
+		err = s.grant(s.ttl)
+		s.mu.RUnlock()
+	}
+
+	return err
 }
 
 func (s *EtcdV3) normalize(key string) string {
@@ -145,6 +154,7 @@ func (s *EtcdV3) normalize(key string) string {
 	return strings.TrimPrefix(key, "/")
 }
 
+// grant a lease.
 func (s *EtcdV3) grant(ttl int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	resp, err := s.client.Grant(ctx, ttl)
@@ -168,27 +178,14 @@ func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) erro
 	s.ttl = ttl
 	s.mu.Unlock()
 
-	// init leaseID
-	if s.leaseID == 0 {
-		err := s.grant(ttl)
-		if err != nil {
-			return err
-		}
-		close(s.startKeepAlive)
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	_, err := s.client.Put(ctx, key, string(value), clientv3.WithLease(s.leaseID))
 	cancel()
 
-	// try again
+	// try again to make the connection
 	if err != nil && strings.Contains(err.Error(), "grpc: the client connection is closing") {
 		s.client.Close()
-		err = s.init()
-		if err != nil {
-			return err
-		}
-		err = s.grant(ttl)
+		err = s.init(true)
 		if err != nil {
 			return err
 		}
@@ -197,7 +194,7 @@ func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) erro
 		cancel()
 	}
 
-	// try
+	// try to grant a new lease
 	if err != nil && strings.Contains(err.Error(), "requested lease not found") {
 		err = s.grant(ttl)
 		if err != nil {
@@ -254,13 +251,14 @@ func (s *EtcdV3) Exists(key string) (bool, error) {
 	return len(resp.Kvs) != 0, nil
 }
 
-// Watch for changes on a key
+// Watch for changes on a key.
 func (s *EtcdV3) Watch(key string, stopCh <-chan struct{}) (<-chan *store.KVPair, error) {
 	watchCh := make(chan *store.KVPair)
 
 	go func() {
 		defer close(watchCh)
 
+		// put the current value into returned channel before watch
 		pair, err := s.Get(key)
 		if err != nil {
 			return
@@ -273,6 +271,9 @@ func (s *EtcdV3) Watch(key string, stopCh <-chan struct{}) (<-chan *store.KVPair
 			case <-s.done:
 				return
 			case wresp := <-rch:
+				if wresp.Canceled { // watch is canceled
+					return
+				}
 				for _, event := range wresp.Events {
 					watchCh <- &store.KVPair{
 						Key:       string(event.Kv.Key),
@@ -287,8 +288,7 @@ func (s *EtcdV3) Watch(key string, stopCh <-chan struct{}) (<-chan *store.KVPair
 	return watchCh, nil
 }
 
-// WatchTree watches for changes on child nodes under
-// a given directory
+// WatchTree watches for changes on child nodes under a given directory
 func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*store.KVPair, error) {
 	watchCh := make(chan []*store.KVPair)
 
@@ -309,7 +309,11 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 			select {
 			case <-s.done:
 				return
-			case <-rch:
+			case resp := <-rch:
+				if resp.Canceled { // watch is canceled
+					return
+				}
+
 				list, err := s.List(directory)
 				if err != nil {
 					if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
@@ -388,6 +392,9 @@ func (s *EtcdV3) AtomicPut(key string, value []byte, previous *store.KVPair, opt
 			return false, nil, err
 		} else if !exist {
 			presp, err = s.client.Put(ctx, key, string(value))
+			if err != nil {
+				return false, nil, err
+			}
 			if presp != nil {
 				revision = presp.Header.GetRevision()
 			}

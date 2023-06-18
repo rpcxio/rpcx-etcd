@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var client = "localhost:4001"
+var client = "localhost:2379"
 
 func makeEtcdClient(t *testing.T) store.Store {
 	kv, err := New(
@@ -30,8 +30,6 @@ func makeEtcdClient(t *testing.T) store.Store {
 }
 
 func TestEtcdV3Register(t *testing.T) {
-	Register()
-
 	kv, err := libkv.NewStore(estore.ETCDV3, []string{client}, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, kv)

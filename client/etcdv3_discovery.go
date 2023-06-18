@@ -13,10 +13,6 @@ import (
 	"github.com/smallnest/rpcx/log"
 )
 
-func init() {
-	etcd.Register()
-}
-
 // EtcdV3Discovery is a etcd service discovery.
 // It always returns the registered servers in etcd.
 type EtcdV3Discovery struct {
@@ -174,6 +170,7 @@ func (d *EtcdV3Discovery) RemoveWatcher(ch chan []*client.KVPair) {
 	d.chans = chans
 }
 
+// watch changes or broken connection events.
 func (d *EtcdV3Discovery) watch() {
 	defer func() {
 		d.kv.Close()
@@ -217,7 +214,7 @@ rewatch:
 			case <-d.stopCh:
 				log.Info("discovery has been closed")
 				return
-			case ps, ok := <-c:
+			case ps, ok := <-c: // closed, reconnect (rewatch)
 				if !ok {
 					break rewatch
 				}

@@ -14,13 +14,8 @@ import (
 	"github.com/rpcxio/libkv"
 	"github.com/rpcxio/libkv/store"
 	estore "github.com/rpcxio/rpcx-etcd/store"
-	etcd "github.com/rpcxio/rpcx-etcd/store/etcdv3"
 	"github.com/smallnest/rpcx/log"
 )
-
-func init() {
-	etcd.Register()
-}
 
 // EtcdV3RegisterPlugin implements etcd registry.
 type EtcdV3RegisterPlugin struct {
@@ -67,12 +62,14 @@ func (p *EtcdV3RegisterPlugin) Start() error {
 		p.kv = kv
 	}
 
+	// create root path
 	err := p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true, TTL: p.UpdateInterval + p.Expired})
 	if err != nil && !strings.Contains(err.Error(), "Not a file") {
 		log.Errorf("cannot create etcd path %s: %v", p.BasePath, err)
 		return err
 	}
 
+	// create service path
 	if p.UpdateInterval > 0 {
 		ticker := time.NewTicker(p.UpdateInterval)
 		go func() {
@@ -84,6 +81,7 @@ func (p *EtcdV3RegisterPlugin) Start() error {
 					close(p.done)
 					return
 				case <-ticker.C:
+					// refresh all services
 					extra := make(map[string]string)
 					if p.Metrics != nil {
 						extra["calls"] = fmt.Sprintf("%.2f", metrics.GetOrRegisterMeter("calls", p.Metrics).RateMean())
@@ -140,7 +138,7 @@ func (p *EtcdV3RegisterPlugin) Stop() error {
 			continue
 		}
 		if exist {
-			p.kv.Delete(nodePath)
+			p.kv.Delete(nodePath) // delete the registered node
 			log.Infof("delete path %s", nodePath)
 		}
 	}
@@ -175,7 +173,6 @@ func (p *EtcdV3RegisterPlugin) Register(name string, rcvr interface{}, metadata 
 	}
 
 	if p.kv == nil {
-		etcd.Register()
 		kv, err := libkv.NewStore(estore.ETCDV3, p.EtcdServers, nil)
 		if err != nil {
 			log.Errorf("cannot create etcd registry: %v", err)
@@ -184,12 +181,14 @@ func (p *EtcdV3RegisterPlugin) Register(name string, rcvr interface{}, metadata 
 		p.kv = kv
 	}
 
+	// create root path
 	err = p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true})
 	if err != nil && !strings.Contains(err.Error(), "Not a file") {
 		log.Errorf("cannot create etcd path %s: %v", p.BasePath, err)
 		return err
 	}
 
+	// create service path
 	nodePath := fmt.Sprintf("%s/%s", p.BasePath, name)
 	err = p.kv.Put(nodePath, []byte(name), &store.WriteOptions{IsDir: true})
 	if err != nil && !strings.Contains(err.Error(), "Not a file") {
@@ -197,6 +196,7 @@ func (p *EtcdV3RegisterPlugin) Register(name string, rcvr interface{}, metadata 
 		return err
 	}
 
+	// create node
 	nodePath = fmt.Sprintf("%s/%s/%s", p.BasePath, name, p.ServiceAddress)
 	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
 	if err != nil {
@@ -230,7 +230,6 @@ func (p *EtcdV3RegisterPlugin) Unregister(name string) (err error) {
 	}
 
 	if p.kv == nil {
-		etcd.Register()
 		kv, err := libkv.NewStore(estore.ETCDV3, p.EtcdServers, nil)
 		if err != nil {
 			log.Errorf("cannot create etcd registry: %v", err)
@@ -254,7 +253,7 @@ func (p *EtcdV3RegisterPlugin) Unregister(name string) (err error) {
 
 	nodePath = fmt.Sprintf("%s/%s/%s", p.BasePath, name, p.ServiceAddress)
 
-	err = p.kv.Delete(nodePath)
+	err = p.kv.Delete(nodePath) // delete the registered node
 	if err != nil {
 		log.Errorf("cannot create consul path %s: %v", nodePath, err)
 		return err
