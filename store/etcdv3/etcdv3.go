@@ -182,30 +182,6 @@ func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) erro
 	_, err := s.client.Put(ctx, key, string(value), clientv3.WithLease(s.leaseID))
 	cancel()
 
-	// try again to make the connection
-	if err != nil && strings.Contains(err.Error(), "grpc: the client connection is closing") {
-		s.client.Close()
-		err = s.init(true)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-		_, err = s.client.Put(ctx, key, string(value), clientv3.WithLease(s.leaseID))
-		cancel()
-	}
-
-	// try to grant a new lease
-	if err != nil && strings.Contains(err.Error(), "requested lease not found") {
-		err = s.grant(ttl)
-		if err != nil {
-			return err
-		}
-		// reput with leaseID
-		ctx, cancel = context.WithTimeout(context.Background(), s.timeout)
-		_, err = s.client.Put(ctx, key, string(value), clientv3.WithLease(s.leaseID))
-		cancel()
-	}
-
 	return err
 }
 

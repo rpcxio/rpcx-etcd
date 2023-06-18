@@ -103,12 +103,27 @@ func (p *EtcdV3RegisterPlugin) Start() error {
 								log.Errorf("cannot re-create etcd path %s: %v", nodePath, err)
 							}
 
+							if err != nil {
+								time.Sleep(time.Second)
+								err = p.kv.Put(nodePath, []byte(meta), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
+								if err != nil {
+									log.Errorf("cannot re-create etcd path %s: %v", nodePath, err)
+								}
+							}
+
 						} else {
 							v, _ := url.ParseQuery(string(kvPair.Value))
 							for key, value := range extra {
 								v.Set(key, value)
 							}
-							p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
+							err = p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
+							if err != nil {
+								time.Sleep(time.Second)
+								err = p.kv.Put(nodePath, []byte(v.Encode()), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
+								if err != nil {
+									log.Errorf("cannot re-create etcd path %s: %v", nodePath, err)
+								}
+							}
 						}
 					}
 				}
