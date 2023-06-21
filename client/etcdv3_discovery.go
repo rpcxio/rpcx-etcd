@@ -8,10 +8,15 @@ import (
 	"github.com/rpcxio/libkv"
 	"github.com/rpcxio/libkv/store"
 	estore "github.com/rpcxio/rpcx-etcd/store"
+	"github.com/rpcxio/rpcx-etcd/store/etcdv3"
 	etcd "github.com/rpcxio/rpcx-etcd/store/etcdv3"
 	"github.com/smallnest/rpcx/client"
 	"github.com/smallnest/rpcx/log"
 )
+
+func init() {
+	libkv.AddStore(estore.ETCDV3, etcdv3.New)
+}
 
 // EtcdV3Discovery is a etcd service discovery.
 // It always returns the registered servers in etcd.

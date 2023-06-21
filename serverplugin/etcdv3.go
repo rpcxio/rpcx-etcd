@@ -14,8 +14,13 @@ import (
 	"github.com/rpcxio/libkv"
 	"github.com/rpcxio/libkv/store"
 	estore "github.com/rpcxio/rpcx-etcd/store"
+	"github.com/rpcxio/rpcx-etcd/store/etcdv3"
 	"github.com/smallnest/rpcx/log"
 )
+
+func init() {
+	libkv.AddStore(estore.ETCDV3, etcdv3.New)
+}
 
 // EtcdV3RegisterPlugin implements etcd registry.
 type EtcdV3RegisterPlugin struct {
