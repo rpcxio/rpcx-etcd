@@ -207,7 +207,7 @@ rewatch:
 				return
 			case ps, ok := <-c:
 				if !ok {
-					break rewatch
+					goto rewatch
 				}
 				var pairs []*client.KVPair // latest servers
 				if ps == nil {

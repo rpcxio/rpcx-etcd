@@ -267,16 +267,14 @@ func (s *EtcdV3) Watch(key string, stopCh <-chan struct{}) (<-chan *store.KVPair
 // WatchTree watches for changes on child nodes under a given directory
 func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*store.KVPair, error) {
 	watchCh := make(chan []*store.KVPair)
-
+	list, err := s.List(directory)
+	if err != nil {
+		if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
+			return watchCh, err
+		}
+	}
 	go func() {
 		defer close(watchCh)
-
-		list, err := s.List(directory)
-		if err != nil {
-			if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
-				return
-			}
-		}
 
 		watchCh <- list
 
