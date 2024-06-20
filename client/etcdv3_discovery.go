@@ -221,7 +221,7 @@ rewatch:
 				return
 			case ps, ok := <-c: // closed, reconnect (rewatch)
 				if !ok {
-					break rewatch
+					goto rewatch
 				}
 				var pairs []*client.KVPair // latest servers
 				if ps == nil && !d.AllowKeyNotFound {

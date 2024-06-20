@@ -246,8 +246,8 @@ func (s *EtcdV3) Watch(key string, stopCh <-chan struct{}) (<-chan *store.KVPair
 			select {
 			case <-s.done:
 				return
-			case wresp := <-rch:
-				if wresp.Canceled { // watch is canceled
+			case wresp, ok := <-rch:
+				if !ok || wresp.Canceled { // watch is canceled
 					return
 				}
 				for _, event := range wresp.Events {
