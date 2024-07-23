@@ -204,7 +204,15 @@ func (p *EtcdRegisterPlugin) Register(name string, rcvr interface{}, metadata st
 		log.Errorf("cannot create etcd path %s: %v", nodePath, err)
 		return err
 	}
-	p.Services = append(p.Services, name)
+
+	services := make(map[string]struct{})
+	for _, v := range p.Services {
+		services[v] = struct{}{}
+	}
+
+	if _, ok := services[name]; !ok {
+		p.Services = append(p.Services, name)
+	}
 
 	p.metasLock.Lock()
 	if p.metas == nil {
