@@ -283,8 +283,8 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 			select {
 			case <-s.done:
 				return
-			case resp := <-rch:
-				if resp.Canceled { // watch is canceled
+			case resp, ok := <-rch:
+				if !ok || resp.Canceled { // watch is canceled
 					return
 				}
 
