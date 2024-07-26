@@ -16,10 +16,17 @@ import (
 	estore "github.com/rpcxio/rpcx-etcd/store"
 	"github.com/rpcxio/rpcx-etcd/store/etcdv3"
 	"github.com/smallnest/rpcx/log"
+	"github.com/smallnest/rpcx/share"
 )
 
 func init() {
 	libkv.AddStore(estore.ETCDV3, etcdv3.New)
+}
+
+type RegPath struct {
+	key     string
+	value   []byte
+	options *store.WriteOptions
 }
 
 // EtcdV3RegisterPlugin implements etcd registry.
@@ -43,6 +50,27 @@ type EtcdV3RegisterPlugin struct {
 
 	dying chan struct{}
 	done  chan struct{}
+
+	paths         map[string]*RegPath
+	ServerStarted chan struct{}
+}
+
+func (p *EtcdV3RegisterPlugin) register() error {
+	if p.ServerStarted != nil {
+		<-p.ServerStarted
+	}
+	if share.Trace {
+		log.Infof("etcd register start")
+	}
+
+	for path, value := range p.paths {
+		err := p.kv.Put(path, value.value, value.options)
+		if err != nil && !strings.Contains(err.Error(), "Not a file") {
+			log.Errorf("cannot create etcd path %s: %v", p.BasePath, err)
+			return err
+		}
+	}
+	return nil
 }
 
 // Start starts to connect etcd cluster
@@ -201,35 +229,39 @@ func (p *EtcdV3RegisterPlugin) Register(name string, rcvr interface{}, metadata 
 		p.kv = kv
 	}
 
+	paths := make(map[string]*RegPath)
+
 	// create root path
-	err = p.kv.Put(p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true})
-	if err != nil && !strings.Contains(err.Error(), "Not a file") {
-		log.Errorf("cannot create etcd path %s: %v", p.BasePath, err)
-		return err
-	}
+	paths[p.BasePath] = &RegPath{p.BasePath, []byte("rpcx_path"), &store.WriteOptions{IsDir: true}}
 
 	// create service path
 	nodePath := fmt.Sprintf("%s/%s", p.BasePath, name)
-	err = p.kv.Put(nodePath, []byte(name), &store.WriteOptions{IsDir: true})
-	if err != nil && !strings.Contains(err.Error(), "Not a file") {
-		log.Errorf("cannot create etcd path %s: %v", nodePath, err)
-		return err
-	}
+	paths[nodePath] = &RegPath{nodePath, []byte(name), &store.WriteOptions{IsDir: true}}
 
 	// create node
 	nodePath = fmt.Sprintf("%s/%s/%s", p.BasePath, name, p.ServiceAddress)
-	err = p.kv.Put(nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired})
-	if err != nil {
-		log.Errorf("cannot create etcd path %s: %v", nodePath, err)
-		return err
+	paths[nodePath] = &RegPath{nodePath, []byte(metadata), &store.WriteOptions{TTL: p.UpdateInterval + p.Expired}}
+
+	services := make(map[string]struct{})
+	for _, v := range p.Services {
+		services[v] = struct{}{}
 	}
 
-	p.Services = append(p.Services, name)
+	if _, ok := services[name]; !ok {
+		p.Services = append(p.Services, name)
+	}
+
+	if p.ServerStarted == nil {
+		p.register()
+	} else {
+		go p.register()
+	}
 
 	p.metasLock.Lock()
 	if p.metas == nil {
 		p.metas = make(map[string]string)
 	}
+	p.paths = paths
 	p.metas[name] = metadata
 	p.metasLock.Unlock()
 	return
