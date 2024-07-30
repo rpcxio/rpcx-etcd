@@ -3,13 +3,15 @@ package etcdv3
 import (
 	"context"
 	"errors"
-	"strings"
+	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/rpcxio/libkv"
 	"github.com/rpcxio/libkv/store"
 	estore "github.com/rpcxio/rpcx-etcd/store"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 )
@@ -28,16 +30,25 @@ func init() {
 	libkv.AddStore(estore.ETCDV3, New)
 }
 
+type RegPath struct {
+	key     string
+	value   []byte
+	options *store.WriteOptions
+}
+
 // EtcdV3 is the receiver type for the Store interface
 type EtcdV3 struct {
 	timeout        time.Duration
 	client         *clientv3.Client
-	leaseID        clientv3.LeaseID
 	cfg            clientv3.Config
+	paths          map[string]RegPath
+	leaseIDs       map[int64]clientv3.LeaseID
 	done           chan struct{}
 	startKeepAlive chan struct{}
 
 	AllowKeyNotFound bool
+
+	FaultRecovery bool
 
 	mu  sync.RWMutex
 	ttl int64
@@ -49,6 +60,8 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 	s := &EtcdV3{
 		done:           make(chan struct{}),
 		startKeepAlive: make(chan struct{}),
+		paths:          make(map[string]RegPath),
+		leaseIDs:       make(map[int64]clientv3.LeaseID),
 		ttl:            defaultTTL,
 	}
 
@@ -70,116 +83,101 @@ func New(addrs []string, options *store.Config) (store.Store, error) {
 		s.timeout = 10 * time.Second
 	}
 	s.cfg = cfg
-	err := s.init(true)
+	cli, err := clientv3.New(s.cfg)
 	if err != nil {
 		return nil, err
 	}
-
-	go s.keepAlive()
-
+	s.client = cli
 	return s, nil
 }
 
-func (s *EtcdV3) keepAlive() {
-	var ch <-chan *clientv3.LeaseKeepAliveResponse
-	var err error
-rekeepalive:
-	for {
-		if s.leaseID != 0 {
-			ch, err = s.client.KeepAlive(context.Background(), s.leaseID)
-		}
-		if err == nil {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-
-	// KeepAlive success
-	for {
-		select {
-		case <-s.done:
+func (s *EtcdV3) keepAlive(ttl int64, leaseID clientv3.LeaseID) {
+	go func(id clientv3.LeaseID) {
+		ch, kaerr := s.client.KeepAlive(context.Background(), id)
+		if kaerr != nil {
+			log.Printf("Failed to keep alive lease %v: %v", id, kaerr)
 			return
-		case resp := <-ch: // KeepAlive channel is closed
-			if resp == nil { // connection is closed
-				s.client.Close()
-				for {
-					select {
-					case <-s.done:
+		}
+		for ka := range ch {
+			if ka == nil {
+				log.Printf("lease %v has expired", id)
+				return
+			}
+			fmt.Printf("lease %v renewed with TTL: %v\n", id, ka.TTL)
+		}
+		log.Printf("lease %v has expired", id)
+		s.mu.Lock()
+		delete(s.leaseIDs, ttl)
+		s.mu.Unlock()
+		if s.FaultRecovery {
+			log.Printf("lease fault recovery %v", id)
+			leaseID, err := s.getLeaseID(ttl)
+			if err != nil {
+				log.Printf("lease %v grant err: %s", id, err)
+				return
+			}
+			s.mu.Lock()
+			s.leaseIDs[ttl] = leaseID
+			s.mu.Unlock()
+			for _, v := range s.paths {
+				if int64(v.options.TTL.Seconds()) == ttl {
+					ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+					_, err := s.client.Put(ctx, v.key, string(v.value), clientv3.WithLease(leaseID))
+					cancel()
+					if err != nil {
+						log.Printf("lease %v fault recovery, put %v err:  %s", id, v.key, err)
 						return
-					default:
-						err = s.init(false)
-						if err != nil {
-							time.Sleep(time.Second)
-							continue
-						}
-
-						s.mu.RLock()
-						err = s.grant(s.ttl)
-						s.mu.RUnlock()
-						if err != nil {
-							s.client.Close()
-							time.Sleep(time.Second)
-							continue
-						}
-						goto rekeepalive
 					}
+					log.Printf("lease fault recovery %v, path: %s", id, v.key)
 				}
-
 			}
 		}
-	}
-
-}
-
-func (s *EtcdV3) init(grant bool) error {
-	cli, err := clientv3.New(s.cfg)
-	if err != nil {
-		return err
-	}
-
-	s.client = cli
-
-	if grant {
-
-		s.mu.RLock()
-		err = s.grant(s.ttl)
-		s.mu.RUnlock()
-	}
-
-	return err
-}
-
-func (s *EtcdV3) normalize(key string) string {
-	key = store.Normalize(key)
-	return strings.TrimPrefix(key, "/")
+	}(leaseID)
 }
 
 // grant a lease.
-func (s *EtcdV3) grant(ttl int64) error {
+func (s *EtcdV3) grant(ttl int64) (clientv3.LeaseID, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	resp, err := s.client.Grant(ctx, ttl)
 	cancel()
-	if err == nil {
-		s.leaseID = resp.ID
+	if err != nil {
+		return 0, err
 	}
-	return err
+	s.keepAlive(ttl, resp.ID)
+	return resp.ID, err
+}
+
+func (s *EtcdV3) getLeaseID(ttl int64) (clientv3.LeaseID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	leaseID, ok := s.leaseIDs[ttl]
+	if ok {
+		return leaseID, nil
+	}
+	leaseID, err := s.grant(ttl)
+	if err != nil {
+		return leaseID, err
+	}
+	s.leaseIDs[ttl] = leaseID
+	return leaseID, nil
 }
 
 // Put a value at the specified key
 func (s *EtcdV3) Put(key string, value []byte, options *store.WriteOptions) error {
-	var ttl int64
-	if options != nil {
-		ttl = int64(options.TTL.Seconds())
-	}
-	if ttl == 0 {
-		ttl = defaultTTL
+	opts := make([]clientv3.OpOption, 0)
+	if options != nil && options.TTL != -1 {
+		leaseID, err := s.getLeaseID(int64(options.TTL.Seconds()))
+		if err != nil {
+			return err
+		}
+		opts = append(opts, clientv3.WithLease(leaseID))
 	}
 	s.mu.Lock()
-	s.ttl = ttl
+	s.paths[key] = RegPath{key: key, value: value, options: options}
 	s.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-	_, err := s.client.Put(ctx, key, string(value), clientv3.WithLease(s.leaseID))
+	_, err := s.client.Put(ctx, key, string(value), opts...)
 	cancel()
 
 	return err
@@ -273,12 +271,16 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 			return watchCh, err
 		}
 	}
+	localKVPair := make(map[string]*store.KVPair)
+	for _, v := range list {
+		localKVPair[v.Key] = v
+	}
 	go func() {
 		defer close(watchCh)
-
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		watchCh <- list
-
-		rch := s.client.Watch(context.Background(), directory, clientv3.WithPrefix())
+		rch := s.client.Watch(ctx, directory, clientv3.WithPrefix())
 		for {
 			select {
 			case <-s.done:
@@ -288,11 +290,24 @@ func (s *EtcdV3) WatchTree(directory string, stopCh <-chan struct{}) (<-chan []*
 					return
 				}
 
-				list, err := s.List(directory)
-				if err != nil {
-					if !s.AllowKeyNotFound || err != store.ErrKeyNotFound {
-						continue
+				for _, event := range resp.Events {
+					switch event.Type {
+					case mvccpb.PUT:
+						fmt.Printf("PUT %s : %s\n", event.Kv.Key, event.Kv.Value)
+						localKVPair[string(event.Kv.Key)] = &store.KVPair{
+							Key:       string(event.Kv.Key),
+							Value:     event.Kv.Value,
+							LastIndex: uint64(event.Kv.Version),
+						}
+					case mvccpb.DELETE:
+						delete(localKVPair, string(event.Kv.Key))
+						fmt.Printf("DELETE %s\n", event.Kv.Key)
 					}
+				}
+
+				list = list[:0]
+				for _, v := range localKVPair {
+					list = append(list, v)
 				}
 				watchCh <- list
 			}

@@ -11,15 +11,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var client = "localhost:2379"
+var client = "127.0.0.1:2379"
 
 func makeEtcdClient(t *testing.T) store.Store {
 	kv, err := New(
 		[]string{client},
 		&store.Config{
 			ConnectionTimeout: 3 * time.Second,
-			Username:          "test",
-			Password:          "very-secure",
+			// Username:          "test",
+			// Password:          "very-secure",
 		},
 	)
 	if err != nil {
